@@ -1,211 +1,225 @@
---// Super clean GUI + forced JobId teleport + loadstring
---// Hunter edition - premium dark mode
+-- Combined FAST Anti-Leave + Anti-AFK + Auto J Spam
+-- Starts everything instantly / very aggressively
+-- Press INSERT = toggle auto J spam
+-- Press J manually = instant heavy Esc spam to interrupt leave
+-- Press O = full escape (only way out)
 
+local UIS = game:GetService("UserInputService")
+local VIM = game:GetService("VirtualInputManager")
 local Players = game:GetService("Players")
-local TeleportService = game:GetService("TeleportService")
-local HttpService = game:GetService("HttpService")
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
+local RS = game:GetService("RunService")
+local VU = game:GetService("VirtualUser")
 
-local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
+local plr = Players.LocalPlayer
+local pgui = plr:WaitForChild("PlayerGui")
 
--- Remove old instance if exists
-for _, gui in playerGui:GetChildren() do
-    if gui.Name == "CleanTPHub" then
-        gui:Destroy()
-    end
-end
+-- Settings (tuned for speed)
+local AUTO_J_ENABLED = true          -- starts ON
+local J_PRESS_INTERVAL = 0.06        -- very fast J spam
+local ANTI_AFK_ENABLED = true
+local INITIAL_FREEZE_TIME = 0.25     -- almost instant lock
+local ESC_SPAM_COUNT_ON_J = 12       -- more aggressive when pressing J manually
+local ESC_SPAM_DELAY = 0.0006        -- tighter timing
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "CleanTPHub"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent = playerGui
+local isTrapped = false
+local autoJRunning = AUTO_J_ENABLED
+local shiftSpamActive = false
+local blockConn, shiftConn, clickConn = nil, nil, nil
+local oldWS, oldJP = 16, 50
 
--- Main frame
-local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 340, 0, 200)
-MainFrame.Position = UDim2.new(0.5, -170, 0.5, -100)
-MainFrame.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
-MainFrame.BorderSizePixel = 0
-MainFrame.BackgroundTransparency = 0.04
-MainFrame.Parent = ScreenGui
-
-local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 18)
-UICorner.Parent = MainFrame
-
-local UIGradient = Instance.new("UIGradient")
-UIGradient.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(28, 28, 36)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 10, 14))
-}
-UIGradient.Rotation = 90
-UIGradient.Parent = MainFrame
-
-local UIStroke = Instance.new("UIStroke")
-UIStroke.Color = Color3.fromRGB(70, 170, 255)
-UIStroke.Transparency = 0.6
-UIStroke.Thickness = 1.8
-UIStroke.Parent = MainFrame
-
--- Title
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 45)
-Title.BackgroundTransparency = 1
-Title.Text = "PRIVATE TP LOADER"
-Title.TextColor3 = Color3.fromRGB(225, 225, 240)
-Title.TextSize = 20
-Title.Font = Enum.Font.GothamBlack
-Title.TextXAlignment = Enum.TextXAlignment.Center
-Title.Parent = MainFrame
-
-local Underline = Instance.new("Frame")
-Underline.Size = UDim2.new(0.75, 0, 0, 3)
-Underline.Position = UDim2.new(0.125, 0, 0, 42)
-Underline.BackgroundColor3 = Color3.fromRGB(90, 190, 255)
-Underline.BorderSizePixel = 0
-Underline.Parent = MainFrame
-
-local UnderlineCorner = Instance.new("UICorner")
-UnderlineCorner.CornerRadius = UDim.new(1,0)
-UnderlineCorner.Parent = Underline
-
--- Big button
-local LoadButton = Instance.new("TextButton")
-LoadButton.Size = UDim2.new(0.84, 0, 0, 68)
-LoadButton.Position = UDim2.new(0.08, 0, 0.40, 0)
-LoadButton.BackgroundColor3 = Color3.fromRGB(50, 130, 255)
-LoadButton.TextColor3 = Color3.fromRGB(250, 250, 255)
-LoadButton.Text = "Join Specific Server + Load"
-LoadButton.TextSize = 23
-LoadButton.Font = Enum.Font.GothamSemibold
-LoadButton.BorderSizePixel = 0
-LoadButton.AutoButtonColor = false
-LoadButton.Parent = MainFrame
-
-local ButtonCorner = Instance.new("UICorner")
-ButtonCorner.CornerRadius = UDim.new(0, 14)
-ButtonCorner.Parent = LoadButton
-
-local ButtonStroke = Instance.new("UIStroke")
-ButtonStroke.Color = Color3.fromRGB(110, 190, 255)
-ButtonStroke.Thickness = 2.2
-ButtonStroke.Transparency = 0.35
-ButtonStroke.Parent = LoadButton
-
--- Hover / click effects
-local function tween(obj, props, time, easing)
-    local ti = TweenInfo.new(time or 0.28, easing or Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-    TweenService:Create(obj, ti, props):Play()
-end
-
-LoadButton.MouseEnter:Connect(function()
-    tween(LoadButton, {BackgroundColor3 = Color3.fromRGB(75, 155, 255)}, 0.25)
-    tween(ButtonStroke, {Transparency = 0.15}, 0.25)
-end)
-
-LoadButton.MouseLeave:Connect(function()
-    tween(LoadButton, {BackgroundColor3 = Color3.fromRGB(50, 130, 255)}, 0.35)
-    tween(ButtonStroke, {Transparency = 0.35}, 0.35)
-end)
-
-LoadButton.MouseButton1Down:Connect(function()
-    tween(LoadButton, {Size = UDim2.new(0.82, 0, 0, 64)}, 0.13, Enum.EasingStyle.Back)
-end)
-
-LoadButton.MouseButton1Up:Connect(function()
-    tween(LoadButton, {Size = UDim2.new(0.84, 0, 0, 68)}, 0.2, Enum.EasingStyle.Back)
-end)
-
--- The action: teleport to specific JobId → then load the script
-LoadButton.MouseButton1Click:Connect(function()
-    -- Quick flash feedback
-    local flash = Instance.new("Frame")
-    flash.Size = UDim2.new(1,0,1,0)
-    flash.BackgroundColor3 = Color3.fromRGB(255,255,255)
-    flash.BackgroundTransparency = 0.5
-    flash.ZIndex = 10
-    flash.Parent = LoadButton
-    local fc = Instance.new("UICorner", flash)
-    fc.CornerRadius = UDim.new(0,14)
-    tween(flash, {BackgroundTransparency = 1}, 0.45)
-    game.Debris:AddItem(flash, 0.6)
-
-    -- Target JobId
-    local targetJobId = "de9b59d8-f086-42b2-afcf-e83e1d52b95a"
-    local placeId = 109983668079237   -- Pls Donate (change if needed)
-
-    -- Attempt teleport
+-- ────────────────────────────────────────
+--               ANTI-AFK (instant)
+-- ────────────────────────────────────────
+if ANTI_AFK_ENABLED then
+    print("[FAST] Anti-AFK → ACTIVE")
+    
+    -- Classic VirtualUser anti-idle
+    plr.Idled:Connect(function()
+        VU:CaptureController()
+        VU:ClickButton2(Vector2.new())
+    end)
+    
+    -- Fast backup movement simulation (~every 3 min)
     task.spawn(function()
-        local success, err = pcall(function()
-            TeleportService:TeleportToPlaceInstance(placeId, targetJobId, player)
-        end)
-
-        if not success then
-            warn("[Teleport Failed] → " .. tostring(err))
-            -- Optional: show error in GUI (you can add a label if you want)
+        while ANTI_AFK_ENABLED do
+            task.wait(180)
+            VIM:SendKeyEvent(true, Enum.KeyCode.W, false, game)
+            task.wait(0.02)
+            VIM:SendKeyEvent(false, Enum.KeyCode.W, false, game)
+            print("[Anti-AFK] Tiny W pulse")
         end
     end)
+end
 
-    -- Load the script anyway (some executors allow it before/after teleport)
-    task.delay(0.4, function()
-        local success, err = pcall(function()
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/tienkhah1/TP/refs/heads/main/dqw"))()
-        end)
-        if not success then
-            warn("[Script Load Failed] → " .. tostring(err))
+-- ────────────────────────────────────────
+--        AUTO J SPAM (toggle with INSERT)
+-- ────────────────────────────────────────
+task.spawn(function()
+    while true do
+        task.wait(J_PRESS_INTERVAL)
+        if autoJRunning then
+            VIM:SendKeyEvent(true, Enum.KeyCode.J, false, game)
+            task.wait(0.03)
+            VIM:SendKeyEvent(false, Enum.KeyCode.J, false, game)
+        end
+    end
+end)
+
+UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    
+    if input.KeyCode == Enum.KeyCode.Insert then
+        autoJRunning = not autoJRunning
+        print("[AUTO J] " .. (autoJRunning and "ON" or "OFF"))
+    end
+end)
+
+-- ────────────────────────────────────────
+--           TRAP / ANTI-LEAVE LOGIC
+-- ────────────────────────────────────────
+local function trapPlayer()
+    if isTrapped then return end
+    isTrapped = true
+    
+    -- Black screen overlay
+    local gui = Instance.new("ScreenGui", pgui)
+    gui.IgnoreGuiInset = true
+    gui.ResetOnSpawn = false
+    gui.DisplayOrder = 9999
+    
+    local black = Instance.new("Frame", gui)
+    black.Size = UDim2.new(1,0,1,0)
+    black.BackgroundColor3 = Color3.new(0,0,0)
+    black.BackgroundTransparency = 0
+    
+    -- Freeze character
+    local char = plr.Character
+    if char then
+        local hum = char:FindFirstChildWhichIsA("Humanoid")
+        if hum then
+            oldWS = hum.WalkSpeed
+            oldJP = hum.JumpPower
+            hum.WalkSpeed = 0
+            hum.JumpPower = 0
+        end
+    end
+    
+    -- Hard lock movement
+    RS:BindToRenderStep("HardLock", 2000, function()
+        if not isTrapped then return end
+        local hum = plr.Character and plr.Character:FindFirstChildWhichIsA("Humanoid")
+        if hum then
+            hum.WalkSpeed = 0
+            hum.JumpPower = 0
+            hum:ChangeState(Enum.HumanoidStateType.Physics)
         end
     end)
-end)
-
--- Small close button
-local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.new(0, 32, 0, 32)
-CloseBtn.Position = UDim2.new(1, -38, 0, 8)
-CloseBtn.BackgroundTransparency = 1
-CloseBtn.Text = "×"
-CloseBtn.TextColor3 = Color3.fromRGB(220, 70, 70)
-CloseBtn.TextSize = 26
-CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.Parent = MainFrame
-
-CloseBtn.MouseButton1Click:Connect(function()
-    ScreenGui:Destroy()
-end)
-
--- Draggable
-local dragging, dragInput, dragStart, startPos
-
-MainFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = MainFrame.Position
-
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
+    
+    -- Insane left-click spam at weird position
+    clickConn = RS.Heartbeat:Connect(function()
+        if not isTrapped then return end
+        VIM:SendMouseButtonEvent(40, -25, 0, true, game)
+        VIM:SendMouseButtonEvent(40, -25, 0, false, game)
+    end)
+    
+    -- Block most inputs + Esc interrupt + Shift toggle
+    blockConn = UIS.InputBegan:Connect(function(input)
+        if input.KeyCode == Enum.KeyCode.O then
+            -- Full escape only with O
+            return
+        end
+        
+        if input.KeyCode == Enum.KeyCode.P then
+            shiftSpamActive = not shiftSpamActive
+            if shiftSpamActive then
+                shiftConn = RS.Heartbeat:Connect(function()
+                    if not isTrapped or not shiftSpamActive then return end
+                    UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
+                    task.wait(0.04 + math.random()*0.06)
+                    UIS.MouseBehavior = Enum.MouseBehavior.Default
+                    task.wait(0.03 + math.random()*0.05)
+                end)
+            else
+                if shiftConn then shiftConn:Disconnect() shiftConn = nil end
+                UIS.MouseBehavior = Enum.MouseBehavior.Default
             end
-        end)
+            return
+        end
+        
+        if input.KeyCode == Enum.KeyCode.J then
+            -- Aggressive Esc spam when J pressed manually
+            for i = 1, ESC_SPAM_COUNT_ON_J do
+                task.spawn(function()
+                    task.wait(i * ESC_SPAM_DELAY)
+                    VIM:SendKeyEvent(true, Enum.KeyCode.Escape, false, game)
+                    task.wait(0.0003)
+                    VIM:SendKeyEvent(false, Enum.KeyCode.Escape, false, game)
+                end)
+            end
+            return
+        end
+        
+        -- Catch Esc and re-press it instantly (interrupt leave)
+        if input.KeyCode == Enum.KeyCode.Escape then
+            task.delay(0.00001, function()
+                VIM:SendKeyEvent(true, Enum.KeyCode.Escape, false, game)
+                task.delay(0.00001, function()
+                    VIM:SendKeyEvent(false, Enum.KeyCode.Escape, false, game)
+                end)
+            end)
+        end
+    end)
+end
+
+local function untrapPlayer()
+    if not isTrapped then return end
+    isTrapped = false
+    
+    if blockConn then blockConn:Disconnect() end
+    if shiftConn then shiftConn:Disconnect() end
+    if clickConn then clickConn:Disconnect() end
+    RS:UnbindFromRenderStep("HardLock")
+    
+    local gui = pgui:FindFirstChildWhichIsA("ScreenGui") -- crude but works
+    if gui then gui:Destroy() end
+    
+    local char = plr.Character
+    if char then
+        local hum = char:FindFirstChildWhichIsA("Humanoid")
+        if hum then
+            hum.WalkSpeed = oldWS
+            hum.JumpPower = oldJP
+        end
+    end
+    
+    UIS.MouseBehavior = Enum.MouseBehavior.Default
+end
+
+-- ────────────────────────────────────────
+--          START SEQUENCE (very fast)
+-- ────────────────────────────────────────
+-- Auto trigger J once instantly to activate anti-leave logic
+task.spawn(function()
+    task.wait(0.08) -- tiny wait for input system
+    VIM:SendKeyEvent(true, Enum.KeyCode.J, false, game)
+    task.wait(0.025)
+    VIM:SendKeyEvent(false, Enum.KeyCode.J, false, game)
+end)
+
+-- Lock player almost instantly
+task.delay(INITIAL_FREEZE_TIME, trapPlayer)
+
+-- O = escape
+UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.O then
+        untrapPlayer()
+        print("[ESCAPE] Player freed with O")
     end
 end)
 
-MainFrame.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        dragInput = input
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(
-            startPos.X.Scale,
-            startPos.X.Offset + delta.X,
-            startPos.Y.Scale,
-            startPos.Y.Offset + delta.Y
-        )
-    end
-end)
+print("FAST TRAP LOADED")
+print("→ Auto J spamming @ " .. J_PRESS_INTERVAL .. "s")
+print("→ Anti-AFK running")
+print("→ Trap active almost instantly")
+print("→ J = heavy Esc spam | O = escape | INSERT = toggle J | P = shift spam")
